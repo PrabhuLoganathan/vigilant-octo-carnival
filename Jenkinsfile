@@ -5,13 +5,11 @@ pipeline {
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
-    // If you *have* the AnsiColor plugin, you can put:
-    // ansiColor('xterm')
   }
 
   tools {
-    jdk   'JDK'      // matches your screenshot
-    maven 'maven'    // matches your screenshot
+    jdk   'JDK'      // must match Manage Jenkins → Tools
+    maven 'maven'    // must match Manage Jenkins → Tools
   }
 
   parameters {
@@ -34,47 +32,28 @@ pipeline {
 
     stage('Tool Versions') {
       steps {
-        script {
-          try {
-            ansiColor('xterm') {
-              sh '''
-                echo "== Java / Maven =="
-                java -version
-                mvn -v
-                echo "== Browser (best-effort) =="
-                (google-chrome --version || chromium --version || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version || true) 2>/dev/null || true
-                (firefox --version || true) 2>/dev/null || true
-              '''
-            }
-          } catch (ignored) {
-            sh '''
-              echo "== Java / Maven =="
-              java -version
-              mvn -v
-            '''
-          }
-        }
+        sh '''
+          echo "== Java / Maven =="
+          java -version
+          mvn -v
+          echo "== Browser (best-effort) =="
+          (google-chrome --version || chromium --version || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version || true) 2>/dev/null || true
+          (firefox --version || true) 2>/dev/null || true
+        '''
       }
     }
 
     stage('Test') {
       steps {
-        script {
-          def mvnCmd = """
-            mvn -q -Dmaven.repo.local=${M2_REPO} \
-              test \
-              -DbaseUrl="${params.BASE_URL}" \
-              -Dcucumber.filter.tags="${params.TAGS}" \
-              -Dheadless=${params.HEADLESS} \
-              -Dbrowser=${params.BROWSER} \
-              -Ddataproviderthreadcount=${params.THREADS}
-          """
-          try {
-            ansiColor('xterm') { sh mvnCmd }
-          } catch (ignored) {
-            sh mvnCmd
-          }
-        }
+        sh """
+          mvn -q -Dmaven.repo.local=${M2_REPO} \
+            test \
+            -DbaseUrl="${params.BASE_URL}" \
+            -Dcucumber.filter.tags="${params.TAGS}" \
+            -Dheadless=${params.HEADLESS} \
+            -Dbrowser=${params.BROWSER} \
+            -Ddataproviderthreadcount=${params.THREADS}
+        """
       }
     }
 
