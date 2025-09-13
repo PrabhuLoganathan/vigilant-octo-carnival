@@ -2,15 +2,16 @@ pipeline {
   agent any
 
   options {
-    ansiColor('xterm')
     timestamps()
     disableConcurrentBuilds()
     buildDiscarder(logRotator(numToKeepStr: '20'))
+    // If you *have* the AnsiColor plugin, you can put:
+    // ansiColor('xterm')
   }
 
   tools {
-    jdk   'JDK17'     // adjust if you named it differently
-    maven 'Maven3'    // adjust if you named it differently
+    jdk   'JDK'      // matches your screenshot
+    maven 'maven'    // matches your screenshot
   }
 
   parameters {
@@ -22,8 +23,7 @@ pipeline {
   }
 
   environment {
-    // keep a local Maven cache inside the workspace for faster builds
-    M2_REPO   = "${WORKSPACE}/.m2/repository"
+    M2_REPO    = "${WORKSPACE}/.m2/repository"
     MAVEN_OPTS = "-Xmx1g -XX:+UseG1GC"
   }
 
@@ -34,36 +34,53 @@ pipeline {
 
     stage('Tool Versions') {
       steps {
-        sh '''
-          echo "== Java / Maven =="
-          java -version
-          mvn -v
-          echo "== Browser =="
-          google-chrome --version || chromium --version || firefox --version || true
-        '''
+        script {
+          try {
+            ansiColor('xterm') {
+              sh '''
+                echo "== Java / Maven =="
+                java -version
+                mvn -v
+                echo "== Browser (best-effort) =="
+                (google-chrome --version || chromium --version || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --version || true) 2>/dev/null || true
+                (firefox --version || true) 2>/dev/null || true
+              '''
+            }
+          } catch (ignored) {
+            sh '''
+              echo "== Java / Maven =="
+              java -version
+              mvn -v
+            '''
+          }
+        }
       }
     }
 
     stage('Test') {
       steps {
-        sh """
-          mvn -q -Dmaven.repo.local=${M2_REPO} \
-            test \
-            -DbaseUrl="${params.BASE_URL}" \
-            -Dcucumber.filter.tags="${params.TAGS}" \
-            -Dheadless=${params.HEADLESS} \
-            -Dbrowser=${params.BROWSER} \
-            -Ddataproviderthreadcount=${params.THREADS}
-        """
+        script {
+          def mvnCmd = """
+            mvn -q -Dmaven.repo.local=${M2_REPO} \
+              test \
+              -DbaseUrl="${params.BASE_URL}" \
+              -Dcucumber.filter.tags="${params.TAGS}" \
+              -Dheadless=${params.HEADLESS} \
+              -Dbrowser=${params.BROWSER} \
+              -Ddataproviderthreadcount=${params.THREADS}
+          """
+          try {
+            ansiColor('xterm') { sh mvnCmd }
+          } catch (ignored) {
+            sh mvnCmd
+          }
+        }
       }
     }
 
     stage('Reports') {
       steps {
-        // Parse surefire/JUnit-style XML (produced even with TestNG)
         junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-
-        // Archive common outputs: cucumber JSON, HTML reports, surefire, TestNG XML
         archiveArtifacts artifacts: '''
           **/target/**/cucumber*.json,
           **/target/cucumber-html-reports/**,
@@ -71,7 +88,6 @@ pipeline {
           **/target/testng-results.xml
         '''.trim(), fingerprint: true, allowEmptyArchive: true
 
-        // Publish cucumber HTML if HTML Publisher plugin exists
         script {
           try {
             if (fileExists('target/cucumber-html-reports/overview-features.html')) {
@@ -82,7 +98,7 @@ pipeline {
               ])
             }
           } catch (ignored) {
-            echo 'HTML Publisher plugin not installed; skipping pretty HTML publish.'
+            echo 'HTML Publisher plugin not installed; skipping Cucumber HTML publish.'
           }
         }
       }
@@ -92,7 +108,6 @@ pipeline {
   post {
     always {
       script {
-        // Keep the .m2 cache; clean the rest if plugin exists
         try {
           cleanWs notFailBuild: true, patterns: [[pattern: '.m2/**', type: 'EXCLUDE']]
         } catch (ignored) {
